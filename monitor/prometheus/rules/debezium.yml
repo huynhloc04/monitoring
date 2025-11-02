@@ -1,0 +1,348 @@
+groups:
+# Debezium MySQL CDC monitoring rules
+# These rules track connector connection status, health, and streaming performance
+# Based on actual JMX metrics exposed by Debezium MySQL connector
+
+- name: debezium_connection
+  rules:
+  # Alert when Debezium instance is down or unreachable
+  - alert: DebeziumInstanceDown
+    expr: up{job="debezium"} == 0
+    for: 1m
+    labels:
+      severity: critical
+      component: debezium
+      instance: "{{ $labels.instance }}"
+    annotations:
+      title: "🔴 Debezium Instance is DOWN"
+      description: |
+        Debezium Connect instance ({{ $labels.instance }}) is unreachable.
+        
+        Duration: More than 1 minute
+        Impact: ALL CDC operations are stopped
+        
+        Check:
+        - Docker container status: docker ps | grep debezium
+        - Container logs: docker logs debezium
+        - Network connectivity
+      summary: "Debezium instance {{ $labels.instance }} is DOWN"
+
+  # Alert when there is no connection to the source database for more than 30 seconds
+  - alert: DebeziumConnectorNotConnected
+    expr: debezium_metrics_Connected{job="debezium"} == 0
+    for: 30s
+    labels:
+      severity: critical
+      component: debezium
+      instance: "{{ $labels.instance }}"
+    annotations:
+      title: "🔴 Debezium Connector NOT CONNECTED"
+      description: |
+        Debezium connector '{{ $labels.name }}' is NOT connected to the source database.
+        
+        Connector: {{ $labels.name }}
+        Plugin: {{ $labels.plugin }}
+        Status: DISCONNECTED
+        Instance: {{ $labels.instance }}
+        
+        This means CDC is NOT capturing changes from the database.
+        Immediate action required!
+      summary: "Connector {{ $labels.name }} is DISCONNECTED"
+
+    # Alert when connector stops applying binlog changes
+  - alert: DebeziumConnectorNoChanges
+    expr: debezium_metrics_ChangesApplied{job="debezium"} == 0
+    for: 5m
+    labels:
+      severity: critical
+      component: debezium
+      instance: "{{ $labels.instance }}"
+    annotations:
+      title: "🔴 Debezium Connector NOT APPLYING CHANGES"
+      description: |
+        Connector '{{ $labels.name }}' has not applied any changes for 5+ minutes (ChangesApplied = 0).
+        
+        Connector might be stuck or database has no activity.
+        Check connector status: `http://debezium:8083/connectors/{{ $labels.name }}/status`
+      summary: "Debezium connector {{ $labels.name }} not applying changes"
+
+  # Alert when last applied change timestamp is invalid (-1), The minimum of value (but greater than 0), the better of connector health is
+  - alert: DebeziumInvalidBinlogTimestamp
+    expr: debezium_metrics_MilliSecondsSinceLastAppliedChange{job="debezium"} < 0
+    for: 2m
+    labels:
+      severity: warning
+      component: debezium
+      instance: "{{ $labels.instance }}"
+    annotations:
+      title: "⚠️ Debezium Invalid Binlog Timestamp"
+      description: |
+        Connector '{{ $labels.name }}' reports MilliSecondsSinceLastAppliedChange = {{ $value }}.
+        
+        Connector may have lost binlog position or never processed changes.
+        Check connector logs: `docker logs debezium`
+      summary: "Debezium connector {{ $labels.name }} has invalid binlog timestamp"
+
+  - alert: DebeziumConnectorMetricsGone
+    expr: |
+      (
+        count by (name) (debezium_metrics_Connected{context="streaming", job="debezium"} offset 5m)
+        unless
+        count by (name) (debezium_metrics_Connected{context="streaming", job="debezium"})
+      ) > 0
+    for: 2m
+    labels:
+      severity: critical
+      component: debezium
+      instance: "{{ $labels.instance }}"
+    annotations:
+      title: "🔴 Debezium Connector Metrics Disappeared"
+      description: |
+        Connector ` {{ $labels.name }} ` instance ` {{ $labels.instance }} ` stopped reporting metrics.
+        Check connector status: `http://debezium:8083/connectors/{{ $labels.name }}/status`
+  
+
+#   - alert: DebeziumConnectorNotConnected
+#     expr: debezium_metrics_Connected{job="debezium"} == 0
+#     for: 30s
+#     labels:
+#       severity: critical
+#       component: debezium
+#       connector: "{{ $labels.name }}"
+#     annotations:
+#       title: "🔴 Debezium Connector NOT CONNECTED"
+#       description: |
+#         Debezium connector '{{ $labels.name }}' is NOT connected to the source database.
+        
+#         Connector: {{ $labels.name }}
+#         Plugin: {{ $labels.plugin }}
+#         Status: DISCONNECTED
+#         Instance: {{ $labels.instance }}
+        
+#         This means CDC is NOT capturing changes from the database.
+#         Immediate action required!
+#       summary: "Connector {{ $labels.name }} is DISCONNECTED"
+
+#   # Alert when connector metrics disappear (connector likely failed/stopped)
+#   - alert: DebeziumConnectorMetricsGone
+#     expr: |
+#       (
+#         count by (name) (debezium_metrics_Connected{context="streaming", job="debezium"} offset 5m)
+#         unless
+#         count by (name) (debezium_metrics_Connected{context="streaming", job="debezium"})
+#       ) > 0
+#     for: 1m
+#     labels:
+#       severity: critical
+#       component: debezium
+#     annotations:
+#       title: "🔴 Debezium Connector Metrics Disappeared"
+#       description: "Connector {{ $labels.name }} stopped reporting metrics."
+#       summary: "Debezium connector metrics disappeared"
+
+#   # Alert if Debezium instance itself is down or unreachable
+#   - alert: DebeziumInstanceDown
+#     expr: up{job="debezium"} == 0
+#     for: 30s
+#     labels:
+#       severity: critical
+#       component: debezium
+#     annotations:
+#       title: "🔴 Debezium Instance is DOWN"
+#       description: |
+#         Debezium Connect instance ({{ $labels.instance }}) is unreachable.
+        
+#         Duration: More than 30 seconds
+#         Impact: ALL CDC operations are stopped
+        
+#         Check:
+#         - Docker container status: docker ps | grep debezium
+#         - Container logs: docker logs debezium
+#         - Network connectivity
+#       summary: "Debezium instance {{ $labels.instance }} is DOWN"
+
+#   # Alert on disconnection events
+#   - alert: DebeziumDisconnectionDetected
+#     expr: increase(debezium_metrics_NumberOfDisconnects{job="debezium"}[5m]) > 0
+#     for: 1m
+#     labels:
+#       severity: critical
+#       component: debezium
+#       connector: "{{ $labels.name }}"
+#     annotations:
+#       title: "🔴 Debezium Disconnection Event"
+#       description: |
+#         Connector '{{ $labels.name }}' has experienced {{ $value }} disconnection(s) in the last 5 minutes.
+        
+#         Connector: {{ $labels.name }}
+#         Disconnects: {{ $value }}
+#         Context: {{ $labels.context }}
+        
+#         Check database connectivity and network stability.
+#       summary: "Connector {{ $labels.name }} disconnected {{ $value }} times"
+
+#   # Alert if connector has errors
+#   - alert: DebeziumErrorsDetected
+#     expr: increase(debezium_metrics_NumberOfErroneousEvents{job="debezium"}[5m]) > 5
+#     for: 1m
+#     labels:
+#       severity: critical
+#       component: debezium
+#       connector: "{{ $labels.name }}"
+#     annotations:
+#       title: "🔴 Debezium Errors Detected"
+#       description: |
+#         Connector '{{ $labels.name }}' has encountered {{ $value }} erroneous events in the last 5 minutes.
+        
+#         Connector: {{ $labels.name }}
+#         Context: {{ $labels.context }}
+#         Error Count: {{ $value }}
+        
+#         Check connector logs for error details.
+#       summary: "{{ $value }} errors in connector {{ $labels.name }}"
+
+# # Debezium performance and lag monitoring
+# - name: debezium_performance
+#   rules:
+#   # Track event processing rate
+#   - record: debezium_event_rate
+#     expr: rate(debezium_metrics_TotalNumberOfEventsSeen{job="debezium"}[5m])
+
+#   # Track error rate
+#   - record: debezium_error_rate
+#     expr: rate(debezium_metrics_NumberOfErroneousEvents{job="debezium"}[5m])
+
+#   # Alert if connector lag is too high (more than 30 seconds)
+#   - alert: DebeziumHighLag
+#     expr: debezium_metrics_MilliSecondsBehindSource{job="debezium"} > 30000
+#     for: 5m
+#     labels:
+#       severity: warning
+#       component: debezium
+#       connector: "{{ $labels.name }}"
+#     annotations:
+#       title: "⚠️ Debezium High Lag"
+#       description: |
+#         Connector '{{ $labels.name }}' is {{ $value }}ms behind the source database.
+        
+#         Connector: {{ $labels.name }}
+#         Lag: {{ $value }}ms
+#         Plugin: {{ $labels.plugin }}
+        
+#         This may indicate slow processing or high database load.
+#       summary: "High lag on connector {{ $labels.name }}"
+
+#   # Alert if no events are being processed (but connector is connected)
+#   - alert: DebeziumNoEventProcessing
+#     expr: |
+#       debezium_metrics_Connected{job="debezium"} == 1
+#       and
+#       rate(debezium_metrics_TotalNumberOfEventsSeen{job="debezium"}[10m]) == 0
+#       and
+#       debezium_metrics_TotalNumberOfEventsSeen{job="debezium"} > 0
+#     for: 15m
+#     labels:
+#       severity: warning
+#       component: debezium
+#       connector: "{{ $labels.name }}"
+#     annotations:
+#       title: "⚠️ Debezium No Events Processing"
+#       description: |
+#         Connector '{{ $labels.name }}' is connected but has not processed any events for 15 minutes.
+        
+#         Connector: {{ $labels.name }}
+#         Status: Connected but idle
+        
+#         This may be normal if there are no database changes, or it could indicate an issue.
+#       summary: "No events processed by {{ $labels.name }}"
+
+#   # Alert if queue is filling up (potential bottleneck)
+#   - alert: DebeziumQueueAlmostFull
+#     expr: |
+#       (debezium_metrics_QueueTotalCapacity{job="debezium"} - debezium_metrics_QueueRemainingCapacity{job="debezium"}) 
+#       / debezium_metrics_QueueTotalCapacity{job="debezium"} * 100 > 80
+#     for: 5m
+#     labels:
+#       severity: warning
+#       component: debezium
+#       connector: "{{ $labels.name }}"
+#     annotations:
+#       title: "⚠️ Debezium Queue Almost Full"
+#       description: |
+#         Connector '{{ $labels.name }}' queue is {{ $value }}% full.
+        
+#         Connector: {{ $labels.name }}
+#         Context: {{ $labels.context }}
+#         Queue Usage: {{ $value }}%
+        
+#         This may indicate the connector cannot keep up with the incoming change events.
+#       summary: "Queue {{ $value }}% full for {{ $labels.name }}"
+
+# # Debezium snapshot monitoring
+# - name: debezium_snapshot
+#   rules:
+#   # Alert if snapshot is taking too long (more than 1 hour)
+#   - alert: DebeziumSnapshotTakingTooLong
+#     expr: |
+#       debezium_metrics_SnapshotRunning{job="debezium", context="snapshot"} == 1
+#       and
+#       debezium_metrics_SnapshotDurationInSeconds{job="debezium", context="snapshot"} > 3600
+#     for: 5m
+#     labels:
+#       severity: warning
+#       component: debezium
+#       connector: "{{ $labels.name }}"
+#     annotations:
+#       title: "⚠️ Debezium Snapshot Taking Too Long"
+#       description: |
+#         Connector '{{ $labels.name }}' snapshot has been running for {{ $value }} seconds.
+        
+#         Connector: {{ $labels.name }}
+#         Duration: {{ $value }}s
+#         Remaining Tables: Check RemainingTableCount metric
+        
+#         Long-running snapshots may impact database performance.
+#       summary: "Snapshot running for {{ $value }}s on {{ $labels.name }}"
+
+#   # Alert if snapshot is aborted
+#   - alert: DebeziumSnapshotAborted
+#     expr: increase(debezium_metrics_SnapshotAborted{job="debezium", context="snapshot"}[5m]) > 0
+#     for: 30s
+#     labels:
+#       severity: critical
+#       component: debezium
+#       connector: "{{ $labels.name }}"
+#     annotations:
+#       title: "🔴 Debezium Snapshot Aborted"
+#       description: |
+#         Connector '{{ $labels.name }}' snapshot was aborted.
+        
+#         Connector: {{ $labels.name }}
+#         Plugin: {{ $labels.plugin }}
+        
+#         Check connector logs for the reason. The connector may need to be restarted.
+#       summary: "Snapshot aborted for {{ $labels.name }}"
+
+#   # Alert if snapshot has many remaining tables (potentially stuck)
+#   - alert: DebeziumSnapshotStuck
+#     expr: |
+#       debezium_metrics_SnapshotRunning{job="debezium", context="snapshot"} == 1
+#       and
+#       changes(debezium_metrics_RemainingTableCount{job="debezium", context="snapshot"}[10m]) == 0
+#       and
+#       debezium_metrics_RemainingTableCount{job="debezium", context="snapshot"} > 0
+#     for: 10m
+#     labels:
+#       severity: warning
+#       component: debezium
+#       connector: "{{ $labels.name }}"
+#     annotations:
+#       title: "⚠️ Debezium Snapshot May Be Stuck"
+#       description: |
+#         Connector '{{ $labels.name }}' snapshot is running but RemainingTableCount hasn't changed in 10 minutes.
+        
+#         Connector: {{ $labels.name }}
+#         Remaining Tables: {{ $value }}
+        
+#         The snapshot may be stuck or processing a very large table.
+#       summary: "Snapshot may be stuck for {{ $labels.name }}"

@@ -1,0 +1,102 @@
+services:
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    container_name: schema-registry
+    ports:
+      - "8081:8081"
+    healthcheck:
+      start_period: 10s
+      interval: 10s
+      retries: 20
+      test: curl --user superUser:superUser --fail --silent --insecure http://localhost:8081/subjects --output /dev/null || exit 1
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'broker-1:9092,broker-2:9092,broker-3:9092'
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    networks:
+      - monitoring
+
+  control-center:
+    image: confluentinc/cp-enterprise-control-center:7.5.0
+    container_name: control-center
+    depends_on:
+      schema-registry:
+        condition: service_healthy
+      debezium:
+        condition: service_healthy
+    ports:
+      - "9021:9021"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9021/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    environment:
+      CONTROL_CENTER_BOOTSTRAP_SERVERS: 'broker-1:9092,broker-2:9092,broker-3:9092'
+      CONTROL_CENTER_CONNECT_CONNECT-DEFAULT_CLUSTER: 'debezium:8083'
+      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
+      CONTROL_CENTER_CONNECT_HEALTHCHECK_ENDPOINT: '/connectors'
+      CONFLUENT_METRICS_TOPIC_REPLICATION: 1
+    networks:
+      - monitoring
+
+  debezium:
+    image: debezium/connect:1.9
+    container_name: debezium
+    healthcheck:
+      test:
+        [ 'CMD', 'curl', '--silent', '--fail', '-X', 'GET', 'http://localhost:8083/connectors', ] 
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "8083:8083"
+      - "5000:5556"
+    command:
+      - /bin/bash
+      - -c
+      - |
+        if [ ! -f /tmp/jdbc_driver.zip ]; then
+          echo ">>> Downloading and extracting JDBC drivers"
+          curl -o /tmp/jdbc_driver.zip "https://hub-downloads.confluent.io/api/plugins/confluentinc/kafka-connect-jdbc/versions/10.8.2/confluentinc-kafka-connect-jdbc-10.8.2.zip"
+        else
+          echo ">>> JDBC drivers already downloaded"
+        fi
+        unzip -o /tmp/jdbc_driver.zip -d /tmp/jdbc_driver
+        echo ">>> Copying JDBC driver files to /kafka/libs"
+        cp -f /tmp/jdbc_driver/confluentinc-kafka-connect-jdbc-10.8.2/lib/* /kafka/libs/
+        echo ">>> Setup completed!"
+        /docker-entrypoint.sh start
+    environment:
+      BOOTSTRAP_SERVERS: broker-1:9092,broker-2:9092,broker-3:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      CONNECT_TOPIC_CREATION_ENABLE: true
+      KAFKA_PRODUCER_MAX_REQUEST_SIZE: 20971520
+      CONNECT_PRODUCER_MAX_REQUEST_SIZE: 20971520
+      CONNECT_MAX_REQUEST_SIZE: 20971520
+      KAFKA_MAX_REQUEST_SIZE: 20971520
+      JMX_PORT: 9101
+      KAFKA_JMX_OPTS: >
+        -Dcom.sun.management.jmxremote
+        -Dcom.sun.management.jmxremote.rmi.port=9101
+        -Dcom.sun.management.jmxremote.authenticate=false
+        -Dcom.sun.management.jmxremote.ssl=false
+        -Djava.rmi.server.hostname=debezium
+      KAFKA_OPTS: >
+        -javaagent:/usr/app/jmx_prometheus_javaagent.jar=5556:/debezium/conf/config.yml
+    volumes:
+      - ./jmx_prometheus_javaagent-1.5.0.jar:/usr/app/jmx_prometheus_javaagent.jar
+      - ./exporter/debezium.yml:/debezium/conf/config.yml
+      - ./smt/target/modify-1.0-SNAPSHOT.jar:/kafka/libs/modify-1.0-SNAPSHOT.jar:ro
+    networks:
+      - monitoring
+      
+networks:
+  monitoring:
+    external: true

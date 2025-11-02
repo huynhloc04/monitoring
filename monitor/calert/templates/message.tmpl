@@ -1,0 +1,12 @@
+🔥 *FIRING ALERT* 🔥
+
+*({{ .Labels.severity | toUpper }}) {{ .Labels.alertname | Title }} - Firing*
+
+{{ range .Annotations.SortedPairs -}}
+*{{ .Name | Title }}:* {{ .Value }}
+{{ end -}}
+
+{{ if .Labels.instance }}*Instance:* {{ .Labels.instance }}{{ end }}
+{{ if .Labels.job }}*Job:* {{ .Labels.job }}{{ end }}
+
+*Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}

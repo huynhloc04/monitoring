@@ -1,0 +1,46 @@
+global:
+  # After this period, if there is no new alert, it will be marked as resolved
+  resolve_timeout: 5m
+
+# Inhibit rules - suppress lower severity alerts when higher severity fires
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'component', 'instance']
+
+route:
+  receiver: 'ggchat_alerts'
+  group_by: ['alertname', 'component', 'instance', 'severity']
+  group_wait: 20s  # Alertmanager waits 10 seconds (to collect messages) before sending that first message to a new group. => If more alerts that belong to the same group arrive during those 10 seconds, they’ll all be included in the same Chat message.
+  group_interval: 3m  # The minimum time between sending UPDATEs for an existing alert group. Only sends again when there’s a change (new alert, severity change, etc.).
+  repeat_interval: 1h  # Send reminders even if nothing changed. Keeping you aware of the same issues even if nothing changed (if error persists)
+
+  # TODO: If you want to route alerts to different receivers, uncomment the following lines
+  # routes:
+  #   - receiver: 'critical_alerts'
+  #     match:
+  #       severity: 'critical'
+
+  #   - receiver: 'warning_alerts'
+  #     match:
+  #       severity: 'warning'
+
+receivers:
+  - name: 'ggchat_alerts'
+    webhook_configs:
+      - url: 'http://calert:6000/dispatch'
+        send_resolved: false
+
+  # TODO: If you want to route alerts to different receivers, uncomment the following lines
+  # - name: 'critical_alerts'
+  #   webhook_configs:
+  #     - url: 'http://calert:6000/dispatch'
+
+  # - name: 'warning_alerts'
+  #   webhook_configs:
+  #     - url: 'http://calert:6000/dispatch'
+
+templates:
+- '/etc/alertmanager/templates/*.tmpl'

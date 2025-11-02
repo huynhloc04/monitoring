@@ -1,0 +1,246 @@
+
+services:
+  controller-1:
+    image: confluentinc/cp-server:7.5.0
+    container_name: controller-1
+    networks:
+      - monitoring
+    ports:
+      - "9101:9101"
+      - "5001:5556"
+    environment:
+      KAFKA_ENABLE_KRAFT: "true"
+      KAFKA_PROCESS_ROLES: "controller"
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENERS: "CONTROLLER://0.0.0.0:29092"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@controller-1:29092,2@controller-2:29092,3@controller-3:29092"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      JMX_PORT: 9101
+      KAFKA_JMX_OPTS: >
+        -Dcom.sun.management.jmxremote
+        -Dcom.sun.management.jmxremote.rmi.port=9101
+        -Dcom.sun.management.jmxremote.authenticate=false
+        -Dcom.sun.management.jmxremote.ssl=false
+        -Djava.rmi.server.hostname=controller-1
+      KAFKA_OPTS: >
+        -javaagent:/usr/app/jmx_prometheus_javaagent.jar=5556:/etc/jmx_exporter/config.yml
+    volumes:
+      - ./jmx_prometheus_javaagent-1.5.0.jar:/usr/app/jmx_prometheus_javaagent.jar
+      - ./exporter/controller.yml:/etc/jmx_exporter/config.yml
+
+  controller-2:
+    image: confluentinc/cp-server:7.5.0
+    container_name: controller-2
+    networks:
+      - monitoring
+    ports:
+      - "9102:9101"
+      - "5002:5556"
+    environment:
+      KAFKA_ENABLE_KRAFT: "true"
+      KAFKA_PROCESS_ROLES: "controller"
+      KAFKA_NODE_ID: 2
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENERS: "CONTROLLER://0.0.0.0:29092"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@controller-1:29092,2@controller-2:29092,3@controller-3:29092"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      JMX_PORT: 9101
+      KAFKA_JMX_OPTS: >
+        -Dcom.sun.management.jmxremote
+        -Dcom.sun.management.jmxremote.rmi.port=9101
+        -Dcom.sun.management.jmxremote.authenticate=false
+        -Dcom.sun.management.jmxremote.ssl=false
+        -Djava.rmi.server.hostname=controller-2
+      KAFKA_OPTS: >
+        -javaagent:/usr/app/jmx_prometheus_javaagent.jar=5556:/etc/jmx_exporter/config.yml
+    volumes:
+      - ./jmx_prometheus_javaagent-1.5.0.jar:/usr/app/jmx_prometheus_javaagent.jar
+      - ./exporter/controller.yml:/etc/jmx_exporter/config.yml
+
+  controller-3:
+    image: confluentinc/cp-server:7.5.0
+    container_name: controller-3
+    networks:
+      - monitoring
+    ports:
+      - "9103:9101"
+      - "5003:5556"
+    environment:
+      KAFKA_ENABLE_KRAFT: "true"
+      KAFKA_PROCESS_ROLES: "controller"
+      KAFKA_NODE_ID: 3
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENERS: "CONTROLLER://0.0.0.0:29092"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@controller-1:29092,2@controller-2:29092,3@controller-3:29092"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      JMX_PORT: 9103
+      KAFKA_JMX_OPTS: >
+        -Dcom.sun.management.jmxremote
+        -Dcom.sun.management.jmxremote.rmi.port=9101
+        -Dcom.sun.management.jmxremote.authenticate=false
+        -Dcom.sun.management.jmxremote.ssl=false
+        -Djava.rmi.server.hostname=controller-3
+      KAFKA_OPTS: >
+        -javaagent:/usr/app/jmx_prometheus_javaagent.jar=5556:/etc/jmx_exporter/config.yml
+    volumes:
+      - ./jmx_prometheus_javaagent-1.5.0.jar:/usr/app/jmx_prometheus_javaagent.jar
+      - ./exporter/controller.yml:/etc/jmx_exporter/config.yml
+
+  broker-1:
+    image: confluentinc/cp-server:7.5.0
+    container_name: broker-1
+    networks:
+      - monitoring
+    ports:
+      - "9094:9093"
+      - "9104:9101"
+      - "5004:5556"
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_ENABLE_KRAFT: "true"
+      KAFKA_PROCESS_ROLES: "broker"
+      KAFKA_NODE_ID: 4
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@controller-1:29092,2@controller-2:29092,3@controller-3:29092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092, EXTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker-1:9092, EXTERNAL://localhost:9094
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3 
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 2000
+      KAFKA_CONFLUENT_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_MESSAGE_MAX_BYTES: 20971520
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 20971520
+      JMX_PORT: 9101
+      KAFKA_JMX_OPTS: >
+        -Dcom.sun.management.jmxremote
+        -Dcom.sun.management.jmxremote.rmi.port=9101
+        -Dcom.sun.management.jmxremote.authenticate=false
+        -Dcom.sun.management.jmxremote.ssl=false
+        -Djava.rmi.server.hostname=broker-1
+      KAFKA_OPTS: >
+        -javaagent:/usr/app/jmx_prometheus_javaagent.jar=5556:/etc/jmx_exporter/config.yml
+    volumes:
+      - broker1_data:/var/lib/kafka/data
+      - ./jmx_prometheus_javaagent-1.5.0.jar:/usr/app/jmx_prometheus_javaagent.jar
+      - ./exporter/broker.yml:/etc/jmx_exporter/config.yml
+
+
+  broker-2:
+    image: confluentinc/cp-server:7.5.0
+    container_name: broker-2
+    networks:
+      - monitoring
+    ports:
+      - "9095:9093"
+      - "9105:9101"
+      - "5005:5556"
+    environment:
+      KAFKA_ENABLE_KRAFT: "true"
+      KAFKA_PROCESS_ROLES: "broker"
+      KAFKA_NODE_ID: 5
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@controller-1:29092,2@controller-2:29092,3@controller-3:29092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092, EXTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker-2:9092, EXTERNAL://localhost:9095
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 2000
+      KAFKA_CONFLUENT_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_MESSAGE_MAX_BYTES: 20971520
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 20971520
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      JMX_PORT: 9101
+      KAFKA_JMX_OPTS: >
+        -Dcom.sun.management.jmxremote
+        -Dcom.sun.management.jmxremote.rmi.port=9101
+        -Dcom.sun.management.jmxremote.authenticate=false
+        -Dcom.sun.management.jmxremote.ssl=false
+        -Djava.rmi.server.hostname=broker-2
+      KAFKA_OPTS: >
+        -javaagent:/usr/app/jmx_prometheus_javaagent.jar=5556:/etc/jmx_exporter/config.yml
+    volumes:
+      - broker2_data:/var/lib/kafka/data
+      - ./jmx_prometheus_javaagent-1.5.0.jar:/usr/app/jmx_prometheus_javaagent.jar
+      - ./exporter/broker.yml:/etc/jmx_exporter/config.yml
+
+
+  broker-3:
+    image: confluentinc/cp-server:7.5.0
+    container_name: broker-3
+    networks:
+      - monitoring
+    ports:
+      - "9096:9093"
+      - "9106:9101"
+      - "5006:5556"
+    environment:
+      KAFKA_ENABLE_KRAFT: "true"
+      KAFKA_PROCESS_ROLES: "broker"
+      KAFKA_NODE_ID: 6
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@controller-1:29092,2@controller-2:29092,3@controller-3:29092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092, EXTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker-3:9092, EXTERNAL://localhost:9096
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 2000
+      KAFKA_CONFLUENT_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_MESSAGE_MAX_BYTES: 20971520
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 20971520
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      JMX_PORT: 9101
+      KAFKA_JMX_OPTS: >
+        -Dcom.sun.management.jmxremote
+        -Dcom.sun.management.jmxremote.rmi.port=9101
+        -Dcom.sun.management.jmxremote.authenticate=false
+        -Dcom.sun.management.jmxremote.ssl=false
+        -Djava.rmi.server.hostname=broker-3
+      KAFKA_OPTS: >
+        -javaagent:/usr/app/jmx_prometheus_javaagent.jar=5556:/etc/jmx_exporter/config.yml
+    volumes:
+      - broker3_data:/var/lib/kafka/data
+      - ./jmx_prometheus_javaagent-1.5.0.jar:/usr/app/jmx_prometheus_javaagent.jar
+      - ./exporter/broker.yml:/etc/jmx_exporter/config.yml
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    networks:
+      - monitoring
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker-1:9092,broker-2:9092,broker-3:9092
+      DYNAMIC_CONFIG_ENABLED: 'true'
+
+volumes:
+  broker1_data:
+  broker2_data:
+  broker3_data:
+
+networks:
+  monitoring:
+    external: true
