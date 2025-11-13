@@ -1168,6 +1168,8 @@ docker exec broker-1 kafka-console-consumer \
 - [Kafka Connect Documentation](https://kafka.apache.org/documentation/#connect)
 - [Schema Registry Documentation](https://docs.confluent.io/platform/current/schema-registry/index.html)
 - [Single Message Transforms](https://kafka.apache.org/documentation/#connect_transforms)
+- [Opensearch Sink Connector Driver](https://github.com/Aiven-Open/opensearch-connector-for-apache-kafka?tab=readme-ov-file)
+- [Setup Opensearch as Kafka Connect](https://www.instaclustr.com/support/documentation/kafka-connect/bundled-kafka-connect-plugins/opensearch-sink-connector/)
 
 ---
 

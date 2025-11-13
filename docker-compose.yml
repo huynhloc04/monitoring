@@ -1,0 +1,22 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: devpass
+      MYSQL_DATABASE: user
+      MYSQL_USER: debezium
+      MYSQL_PASSWORD: devpass
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_source_data:/var/lib/mysql
+    networks:
+      - monitoring
+
+volumes:
+  mysql_source_data:
+
+networks:
+  monitoring:
+    external: true

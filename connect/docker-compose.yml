@@ -1,10 +1,9 @@
 services:
-
   schema-registry:
     image: confluentinc/cp-schema-registry:7.5.0
     container_name: schema-registry
     ports:
-      - "8081:8081"
+      - '8081:8081'
     healthcheck:
       start_period: 10s
       interval: 10s
@@ -26,16 +25,16 @@ services:
       debezium:
         condition: service_healthy
     ports:
-      - "9021:9021"
+      - '9021:9021'
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9021/healthcheck"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:9021/healthcheck']
       interval: 30s
       timeout: 10s
       retries: 3
     environment:
       CONTROL_CENTER_BOOTSTRAP_SERVERS: 'broker-1:9092,broker-2:9092,broker-3:9092'
       CONTROL_CENTER_CONNECT_CONNECT-DEFAULT_CLUSTER: 'debezium:8083'
-      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      CONTROL_CENTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
       CONTROL_CENTER_REPLICATION_FACTOR: 1
       CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
       CONTROL_CENTER_CONNECT_HEALTHCHECK_ENDPOINT: '/connectors'
@@ -48,18 +47,27 @@ services:
     container_name: debezium
     healthcheck:
       test:
-        [ 'CMD', 'curl', '--silent', '--fail', '-X', 'GET', 'http://localhost:8083/connectors', ] 
+        [
+          'CMD',
+          'curl',
+          '--silent',
+          '--fail',
+          '-X',
+          'GET',
+          'http://localhost:8083/connectors'
+        ]
       start_period: 10s
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "8083:8083"
-      - "5000:5556"
+      - '8083:8083'
+      - '5000:5556'
     command:
       - /bin/bash
       - -c
       - |
+        # Download JDBC driver (existing)
         if [ ! -f /tmp/jdbc_driver.zip ]; then
           echo ">>> Downloading and extracting JDBC drivers"
           curl -o /tmp/jdbc_driver.zip "https://hub-downloads.confluent.io/api/plugins/confluentinc/kafka-connect-jdbc/versions/10.8.2/confluentinc-kafka-connect-jdbc-10.8.2.zip"
@@ -68,7 +76,25 @@ services:
         fi
         unzip -o /tmp/jdbc_driver.zip -d /tmp/jdbc_driver
         echo ">>> Copying JDBC driver files to /kafka/libs"
-        cp -f /tmp/jdbc_driver/confluentinc-kafka-connect-jdbc-10.8.2/lib/* /kafka/libs/
+        cp -rf /tmp/jdbc_driver/confluentinc-kafka-connect-jdbc-10.8.2/lib/* /kafka/libs/
+        # Clean up to save disk space
+        echo ">>> Cleaning up temporary files"
+        rm -rf /tmp/jdbc_driver.zip /tmp/jdbc_driver
+
+        # Download Elasticsearch connector (new)
+        # if [ ! -f /tmp/elasticsearch_connector.zip ]; then
+        #   echo ">>> Downloading and extracting Elasticsearch/OpenSearch connector"
+        #   curl -o /tmp/elasticsearch_connector.zip "https://hub-downloads.confluent.io/api/plugins/confluentinc/kafka-connect-elasticsearch/versions/15.0.2/confluentinc-kafka-connect-elasticsearch-15.0.2.zip"
+        # else
+        #   echo ">>> Elasticsearch/OpenSearch connector already downloaded"
+        # fi
+        # unzip -o /tmp/elasticsearch_connector.zip -d /tmp/elasticsearch_connector
+        # echo ">>> Copying Elasticsearch/OpenSearch connector files to /kafka/connect"
+        # cp -rf /tmp/elasticsearch_connector/confluentinc-kafka-connect-elasticsearch-15.0.2/lib/* /kafka/libs/
+        # Clean up to save disk space
+        # echo ">>> Cleaning up temporary files"
+        # rm -rf /tmp/elasticsearch_connector.zip /tmp/elasticsearch_connector
+
         echo ">>> Setup completed!"
         /docker-entrypoint.sh start
     environment:
@@ -94,9 +120,43 @@ services:
       - ./jmx_prometheus_javaagent-1.5.0.jar:/usr/app/jmx_prometheus_javaagent.jar
       - ./exporter/debezium.yml:/debezium/conf/config.yml
       - ./smt/target/modify-1.0-SNAPSHOT.jar:/kafka/libs/modify-1.0-SNAPSHOT.jar:ro
+      - ./opensearch-drivers/build/install/opensearch-connector:/kafka/connect/opensearch-connector
     networks:
       - monitoring
-      
+
+  ksqldb-server:
+    image: confluentinc/cp-ksqldb-server:7.5.0
+    container_name: ksqldb-server
+    depends_on:
+      - schema-registry
+      - debezium
+    ports:
+      - '8088:8088'
+    environment:
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_BOOTSTRAP_SERVERS: broker-1:9092,broker-2:9092,broker-3:9092
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KSQL_KSQL_CONNECT_URL: http://debezium:8083
+      KSQL_KSQL_SERVICE_ID: 'ksql_service'
+      KSQL_KSQL_STREAMS_REPLICATION_FACTOR: 3
+      KSQL_KSQL_INTERNAL_TOPIC_REPLICAS: 3
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_REPLICATION_FACTOR: 3
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: 'true'
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: 'true'
+    networks:
+      - monitoring
+
+  ksqldb-cli:
+    image: confluentinc/cp-ksqldb-cli:7.5.0
+    container_name: ksqldb-cli
+    depends_on:
+      - ksqldb-server
+      - debezium
+    entrypoint: /bin/sh
+    tty: true
+    networks:
+      - monitoring
+
 networks:
   monitoring:
     external: true

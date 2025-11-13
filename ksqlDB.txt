@@ -1,0 +1,114 @@
+# ==============================================
+# =================== USER =====================
+# ==============================================
+
+# ============ Create BRONZE layer =============
+CREATE STREAM user_bronze WITH(KAFKA_TOPIC='monitor_users', KEY_FORMAT='AVRO', VALUE_FORMAT='AVRO');
+
+# ============ Create SILVER layer =============
+# 1. Just add ROWKEY (the Kafka key field ksqlDB uses internally) as the first column in your projection.
+CREATE STREAM user_silver_raw
+  WITH (
+    KAFKA_TOPIC='user_silver_raw',
+    VALUE_FORMAT='AVRO'
+  ) AS
+SELECT
+  ROWKEY                                        AS rowkey,  -- ✅ keep the key
+  COALESCE(AFTER->id, BEFORE->id)               AS id,
+  AFTER->name                                   AS name,
+  AFTER->email                                  AS email,
+  AFTER->age                                    AS age,
+  AFTER->created_at                             AS created_at,
+  OP                                            AS operation
+FROM user_bronze
+WHERE AFTER->name IS NOT NULL
+EMIT CHANGES;
+
+# 2. Then create your re-partitioned stream (with proper key)
+CREATE STREAM user_silver
+  WITH (
+    KAFKA_TOPIC='user_silver',
+    VALUE_FORMAT='AVRO',
+    KEY_FORMAT='AVRO'
+  ) AS
+SELECT *
+FROM user_silver_raw
+PARTITION BY id
+EMIT CHANGES;
+
+# ============= Create gold layer =============
+CREATE TABLE user_gold
+  WITH (
+    KAFKA_TOPIC = 'user_gold',
+    VALUE_FORMAT = 'AVRO',
+    KEY_FORMAT = 'AVRO'
+  ) AS
+SELECT
+  id,
+  LATEST_BY_OFFSET(name)        AS name,
+  LATEST_BY_OFFSET(email)       AS email,
+  LATEST_BY_OFFSET(age)         AS age,
+  LATEST_BY_OFFSET(created_at)  AS created_at,
+  LATEST_BY_OFFSET(operation)   AS last_op
+FROM user_silver
+GROUP BY id
+EMIT CHANGES;
+
+
+# ==============================================
+# ================== ORDER =====================
+# ==============================================
+
+# ============ Create BRONZE layer =============
+CREATE STREAM order_bronze WITH(KAFKA_TOPIC='monitor_orders', KEY_FORMAT='AVRO', VALUE_FORMAT='AVRO');
+
+# ============ Create SILVER layer =============
+# 1. Just add ROWKEY (the Kafka key field ksqlDB uses internally) as the first column in your projection.
+CREATE STREAM order_silver_raw
+  WITH (
+    KAFKA_TOPIC='order_silver_raw',
+    VALUE_FORMAT='AVRO'
+  ) AS
+SELECT
+  ROWKEY                                        AS rowkey,
+  COALESCE(AFTER->id, BEFORE->id)               AS id,
+  AFTER->user_id                                AS user_id,
+  AFTER->product_name                           AS product_name,
+  AFTER->price                                  AS price,
+  AFTER->status                                 AS status,
+  AFTER->created_at                             AS created_at,
+  OP                                            AS operation
+FROM order_bronze
+EMIT CHANGES;
+
+# 2. Then create your re-partitioned stream (with proper key)
+CREATE STREAM order_silver
+  WITH (
+    KAFKA_TOPIC='order_silver',
+    VALUE_FORMAT='AVRO',
+    KEY_FORMAT='AVRO'
+  ) AS
+SELECT *
+FROM order_silver_raw
+PARTITION BY id
+EMIT CHANGES;
+
+# ============= Create gold layer =============
+CREATE TABLE order_gold
+  WITH (
+    KAFKA_TOPIC = 'order_gold',
+    VALUE_FORMAT = 'AVRO',
+    KEY_FORMAT = 'AVRO'
+  ) AS
+SELECT
+  id,
+  LATEST_BY_OFFSET(user_id)      AS user_id,
+  LATEST_BY_OFFSET(price)        AS price,
+  LATEST_BY_OFFSET(product_name) AS product_name,
+  LATEST_BY_OFFSET(status)       AS status,
+  LATEST_BY_OFFSET(created_at)   AS created_at,
+  LATEST_BY_OFFSET(operation)    AS last_op
+FROM order_silver
+GROUP BY id
+EMIT CHANGES;
+
