@@ -157,6 +157,49 @@ services:
     networks:
       - monitoring
 
+  conduktor-db:
+    image: postgres:14
+    container_name: conduktor-db
+    restart: always
+    environment:
+      POSTGRES_DB: conduktor
+      POSTGRES_USER: conduktor
+      POSTGRES_PASSWORD: conduktor
+    volumes:
+      - conduktor_data:/var/lib/postgresql/data
+    networks:
+      - monitoring
+
+  conduktor-platform:
+    image: conduktor/conduktor-platform:latest
+    container_name: conduktor-platform
+    depends_on:
+      - schema-registry
+      - debezium
+      - ksqldb-server
+    ports:
+      - "8089:8080"
+    environment:
+      CDK_CLUSTERS_0_ID: "local"
+      CDK_CLUSTERS_0_NAME: "Local Kafka Cluster"
+      CDK_CLUSTERS_0_BOOTSTRAPSERVERS: "broker-1:9092,broker-2:9092,broker-3:9092"
+      CDK_DATABASE_URL: "postgresql://conduktor:conduktor@conduktor-db:5432/conduktor"
+      CDK_CLUSTERS_0_SCHEMAREGISTRY_URL: "http://schema-registry:8081"
+      CDK_CLUSTERS_0_KAFKACONNECT_0_URL: "http://debezium:8083"
+      CDK_CLUSTERS_0_KSQLDBSERVER_0_URL: "http://ksqldb-server:8088"
+
+      CDK_ADMIN_USER: "admin"
+      CDK_ADMIN_PASSWORD: "admin"
+      CDK_ADMIN_EMAIL: "admin@local.dev"    
+      CDK_LISTENING_PORT: "8080"
+    networks:
+      - monitoring
+
+
 networks:
   monitoring:
     external: true
+
+volumes:
+  conduktor_data:
+

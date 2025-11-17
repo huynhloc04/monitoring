@@ -13,7 +13,7 @@ CREATE STREAM user_silver_raw
     VALUE_FORMAT='AVRO'
   ) AS
 SELECT
-  ROWKEY                                        AS rowkey,  -- ✅ keep the key
+  ROWKEY                                        AS rowkey,
   COALESCE(AFTER->id, BEFORE->id)               AS id,
   AFTER->name                                   AS name,
   AFTER->email                                  AS email,
@@ -21,7 +21,6 @@ SELECT
   AFTER->created_at                             AS created_at,
   OP                                            AS operation
 FROM user_bronze
-WHERE AFTER->name IS NOT NULL
 EMIT CHANGES;
 
 # 2. Then create your re-partitioned stream (with proper key)
@@ -112,3 +111,79 @@ FROM order_silver
 GROUP BY id
 EMIT CHANGES;
 
+
+# ==============================================
+# ================ JOIN INDEX ==================
+# ==============================================
+
+# 1. Derived a stream from order TABLE
+CREATE STREAM order_gold_stream (
+  id INT KEY,
+  user_id INT,
+  product_name STRING,
+  price DECIMAL(10,2),
+  status STRING,
+  created_at STRING,
+  last_op STRING
+) WITH (
+  KAFKA_TOPIC='order_gold',
+  VALUE_FORMAT='AVRO',
+  KEY_FORMAT='AVRO'
+);
+
+# 2. Repartition that stream by user_id (since we use this field to JOIN on user, ksqlDB requires JOIN-related fields are defined as KEY)
+CREATE STREAM order_by_user_stream
+  WITH (
+    KAFKA_TOPIC='order_by_user',
+    VALUE_FORMAT='AVRO',
+    KEY_FORMAT='AVRO'
+  ) AS
+SELECT *
+FROM order_gold_stream
+PARTITION BY user_id
+EMIT CHANGES;
+
+# 3. Re-materialize it as a TABLE
+CREATE TABLE order_by_user_table
+  WITH (
+    KAFKA_TOPIC='order_by_user_table',
+    VALUE_FORMAT='AVRO',
+    KEY_FORMAT='AVRO'
+  ) AS
+SELECT
+  user_id,
+  LATEST_BY_OFFSET(id)            AS order_id,
+  LATEST_BY_OFFSET(product_name)  AS product_name,
+  LATEST_BY_OFFSET(price)         AS price,
+  LATEST_BY_OFFSET(status)        AS status,
+  LATEST_BY_OFFSET(created_at)    AS created_at,
+  LATEST_BY_OFFSET(last_op)       AS last_op
+FROM order_by_user_stream
+GROUP BY user_id, id    # Now each (user_id, order_id) pair is a unique key, so deleting one order won’t blank out the others.
+EMIT CHANGES;
+
+# 4. JOIN tables
+CREATE TABLE order_enriched
+  WITH (
+    KAFKA_TOPIC = 'order_enriched',
+    VALUE_FORMAT = 'AVRO',
+    KEY_FORMAT = 'AVRO'
+  ) AS
+SELECT
+  o.user_id           AS user_id,
+  u.name              AS user_name,
+  u.email             AS email,
+  u.age               AS age,
+  o.product_name      AS product_name,
+  o.price             AS price,
+  o.status            AS status
+FROM order_by_user_table o
+JOIN user_gold u ON o.user_id = u.id
+WHERE o.last_op != 'd' AND u.last_op != 'd'
+EMIT CHANGES;
+
+
+================================ Obstacles ================================
+1. Can not handle the case 1 user has multiple orders
+  - Add additional orders to a specific user => Opensearch just showed the latest order (while user has more than one order).
+  - When deleting an order (but user has remained other orders) => Opensearch showed empty order
